@@ -1,0 +1,8 @@
+{
+  "name": "Get Rich - Personal OS",
+  "description": "A private, secure, AI-powered business and life operating system for financial tracking, project management, and strategic insights.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
