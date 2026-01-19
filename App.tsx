@@ -5,163 +5,111 @@ import {
   Plus, Menu, X, ChevronRight, TrendingUp, TrendingDown, DollarSign, 
   FileText, Calendar, AlertCircle, Lightbulb, ShieldCheck, 
   Receipt, Sparkles, FolderGit2, Clock, LogOut, Lock, User,
-  Settings as SettingsIcon, Database, Save, CheckCircle2, RefreshCw
+  Settings as SettingsIcon, Database, Save, CheckCircle2, RefreshCw,
+  Trash2, ExternalLink, Key, LayoutDashboard, Wallet, CreditCard,
+  AlertTriangle, Info, Globe, Shield, Mail
 } from 'lucide-react';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
 
-import { NAVIGATION, BUSINESS_CONFIG } from './constants';
-import { Invoice, Project, Transaction, ProjectStatus, PaymentStatus, AIInsight } from './types';
-import { DBService, supabase } from './services/db';
+import { NAVIGATION, BUSINESS_CONFIG, CATEGORIES } from './constants';
+import { Invoice, Project, Transaction, ProjectStatus, PaymentStatus, AIInsight, TransactionType } from './types';
+import { DBService, getSupabase } from './services/db';
 import { AIService } from './services/gemini';
 import { StorageService } from './services/storage';
 
-// --- Shared Components ---
+// --- Components ---
 
 const Card: React.FC<{ title: string; children: React.ReactNode; className?: string; subtitle?: string }> = ({ title, children, className = "", subtitle }) => (
-  <div className={`bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden ${className}`}>
-    <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700">
-      <h3 className="font-semibold text-slate-800 dark:text-slate-100">{title}</h3>
-      {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
+  <div className={`bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden ${className}`}>
+    <div className="px-8 py-6 border-b border-slate-100 dark:border-slate-800">
+      <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 dark:text-slate-200">{title}</h3>
+      {subtitle && <p className="text-xs text-slate-500 mt-1">{subtitle}</p>}
     </div>
-    <div className="p-6">{children}</div>
+    <div className="p-8">{children}</div>
   </div>
 );
 
-// --- Pages ---
+const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }> = ({ isOpen, onClose, title, children }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+        <div className="px-8 py-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <h3 className="text-lg font-black uppercase tracking-tight">{title}</h3>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><X size={20}/></button>
+        </div>
+        <div className="p-8">{children}</div>
+      </div>
+    </div>
+  );
+};
 
-const SettingsPage: React.FC<{ user: any }> = ({ user }) => {
+// --- Setup Screen ---
+
+const SetupScreen: React.FC = () => {
   const [url, setUrl] = useState('');
   const [key, setKey] = useState('');
-  const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    const config = StorageService.getSupabaseConfig();
-    if (config) {
-      setUrl(config.url);
-      setKey(config.anonKey);
-    }
-  }, []);
-
-  const handleSaveConfig = (e: React.FormEvent) => {
+  const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    StorageService.saveSupabaseConfig({ url, anonKey: key });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
-    // Reload page to re-initialize Supabase client with new keys
-    window.location.reload();
+    setLoading(true);
+    const sanitizedUrl = url.trim()
+      .replace(/\/+$/, "")
+      .replace(/https?:\/\/https?:\/\//g, "https://");
+    
+    StorageService.saveSupabaseConfig({ url: sanitizedUrl, anonKey: key.trim() });
+    DBService.reinitialize();
+    setTimeout(() => window.location.reload(), 500);
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-      <div>
-        <h1 className="text-2xl font-bold">System Settings</h1>
-        <p className="text-slate-500">Configure your private OS infrastructure</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <div className="md:col-span-2 space-y-6">
-          <Card title="Database Configuration" subtitle="Link your Supabase project to enable cloud sync and security.">
-            <form onSubmit={handleSaveConfig} className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-500 uppercase">Supabase Project URL</label>
-                <div className="relative">
-                  <Database size={16} className="absolute left-3 top-3 text-slate-400" />
-                  <input 
-                    type="url" 
-                    value={url}
-                    onChange={e => setUrl(e.target.value)}
-                    placeholder="https://xyz.supabase.co"
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 pl-10 pr-4 py-2.5 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-500 uppercase">Anon Public Key</label>
-                <div className="relative">
-                  <Lock size={16} className="absolute left-3 top-3 text-slate-400" />
-                  <input 
-                    type="password" 
-                    value={key}
-                    onChange={e => setKey(e.target.value)}
-                    placeholder="eyJhbG..."
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 pl-10 pr-4 py-2.5 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-              </div>
-
-              <div className="p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/20 rounded-lg flex gap-3">
-                <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
-                <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed">
-                  Changes require a page refresh to take effect. If keys are invalid, the app will redirect to the initialization screen.
-                </p>
-              </div>
-
-              <button 
-                type="submit"
-                className="bg-slate-900 dark:bg-white dark:text-slate-900 text-white px-6 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 hover:opacity-90 transition-all"
-              >
-                {saved ? <CheckCircle2 size={18} className="text-emerald-500" /> : <Save size={18} />}
-                {saved ? 'Settings Saved' : 'Save Configuration'}
-              </button>
-            </form>
-          </Card>
-
-          <Card title="Personal Profile">
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center text-blue-600">
-                <User size={32} />
-              </div>
-              <div>
-                <p className="font-bold text-lg">{user?.email?.split('@')[0] || 'User'}</p>
-                <p className="text-sm text-slate-500">{user?.email}</p>
-                <p className="text-[10px] font-bold text-slate-400 uppercase mt-1 tracking-widest">ID: {user?.id?.slice(0, 8)}...</p>
-              </div>
-            </div>
-          </Card>
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+      <div className="max-w-xl w-full bg-slate-900 border border-slate-800 rounded-[3rem] p-12 shadow-2xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/10 blur-[100px] rounded-full -mr-32 -mt-32"></div>
+        <div className="text-center mb-10 relative">
+          <div className="w-20 h-20 bg-blue-600 rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-2xl shadow-blue-500/20">
+            <Database size={40} className="text-white" />
+          </div>
+          <h1 className="text-4xl font-black text-white tracking-tighter uppercase mb-3">Initialize OS</h1>
+          <p className="text-slate-500 text-sm font-medium max-w-xs mx-auto">Link your Supabase instance to establish the secure backbone.</p>
         </div>
 
-        <div className="space-y-6">
-          <Card title="System Status">
-            <div className="space-y-4">
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-500">Database Connection</span>
-                <span className={`flex items-center gap-1.5 font-bold ${DBService.isConfigured() ? 'text-emerald-500' : 'text-rose-500'}`}>
-                  <div className={`w-2 h-2 rounded-full ${DBService.isConfigured() ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-                  {DBService.isConfigured() ? 'Active' : 'Offline'}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-500">AI Intelligence</span>
-                <span className="flex items-center gap-1.5 font-bold text-emerald-500">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  Ready
-                </span>
-              </div>
-              <div className="pt-4 border-t border-slate-100 dark:border-slate-700">
-                 <button className="text-xs font-bold text-blue-600 flex items-center gap-1 hover:underline">
-                   <RefreshCw size={12} /> Clear Local Cache
-                 </button>
-              </div>
-            </div>
-          </Card>
-
-          <div className="bg-slate-900 rounded-xl p-6 text-white overflow-hidden relative">
-            <TrendingUp size={80} className="absolute -bottom-4 -right-4 text-white/5 rotate-12" />
-            <h4 className="font-bold text-lg mb-2">Get Rich v1.0</h4>
-            <p className="text-xs text-slate-400 leading-relaxed mb-4">Your personal business and life operating system is now running on a cloud-backed architecture.</p>
-            <div className="flex gap-2">
-              <span className="px-2 py-0.5 bg-blue-600 rounded text-[9px] font-bold uppercase tracking-wider">Secured</span>
-              <span className="px-2 py-0.5 bg-indigo-600 rounded text-[9px] font-bold uppercase tracking-wider">Synced</span>
-            </div>
+        <form onSubmit={handleSave} className="space-y-6 relative">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-2">Supabase URL</label>
+            <input 
+              type="url" value={url} onChange={e => setUrl(e.target.value)} required
+              className="w-full bg-slate-800/50 border border-slate-700 text-white px-6 py-4 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-slate-600"
+              placeholder="https://xyz.supabase.co"
+            />
           </div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-2">Anon Public Key</label>
+            <input 
+              type="password" value={key} onChange={e => setKey(e.target.value)} required
+              className="w-full bg-slate-800/50 border border-slate-700 text-white px-6 py-4 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-slate-600"
+              placeholder="sb_publishable_..."
+            />
+          </div>
+          <button type="submit" disabled={loading} className="w-full bg-white text-slate-950 font-black py-5 rounded-2xl hover:bg-slate-200 transition-all shadow-xl uppercase tracking-widest text-xs mt-4">
+            {loading ? 'CONNECTING...' : 'START SYSTEM INITIALIZATION'}
+          </button>
+        </form>
+        
+        <div className="mt-12 pt-8 border-t border-slate-800/50 text-center">
+           <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="text-slate-600 hover:text-rose-500 text-[10px] font-black uppercase tracking-widest transition-colors flex items-center gap-2 mx-auto">
+             <RefreshCw size={12} /> Wipe Storage & Reset
+           </button>
         </div>
       </div>
     </div>
   );
 };
+
+// --- Auth Screen ---
 
 const AuthScreen: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -172,19 +120,27 @@ const AuthScreen: React.FC = () => {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!DBService.isConfigured()) {
-       setError("System not configured. Please enter your Supabase credentials in the fallback setup below.");
-       return;
-    }
     setLoading(true);
     setError(null);
     try {
       const { error } = isLogin 
-        ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password });
+        ? await getSupabase().auth.signInWithPassword({ email, password })
+        : await getSupabase().auth.signUp({ email, password });
+      
       if (error) throw error;
+
+      if (!isLogin) {
+        // Just registered, show a success hint if confirmation is likely needed
+        setError("Account created! If you cannot log in, check your email for a confirmation link.");
+        setIsLogin(true);
+      }
     } catch (err: any) {
-      setError(err.message);
+      const msg = err.message || "Authentication failed";
+      if (msg.toLowerCase().includes("email not confirmed")) {
+        setError("EMAIL NOT CONFIRMED: Please check your inbox or disable 'Confirm Email' in Supabase -> Auth -> Providers -> Email settings.");
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -192,287 +148,519 @@ const AuthScreen: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4">
-      <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
-        <div className="text-center mb-10">
-          <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20">
+      <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-[3rem] p-12 shadow-2xl relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-32 h-32 bg-blue-600/20 blur-[60px] rounded-full"></div>
+        <div className="text-center mb-10 relative">
+          <div className="w-16 h-16 bg-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl">
             <ShieldCheck size={32} className="text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Get Rich OS</h1>
-          <p className="text-slate-400 mt-2">Personal Operating System</p>
+          <h1 className="text-2xl font-black text-white uppercase tracking-wider">{isLogin ? 'Access OS' : 'Initialize Account'}</h1>
+          <p className="text-slate-500 text-[10px] mt-2 font-black uppercase tracking-widest">Administrator Credentials Required</p>
         </div>
 
-        <form onSubmit={handleAuth} className="space-y-4">
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-500 uppercase ml-1">Email Address</label>
-            <div className="relative">
-              <User size={18} className="absolute left-4 top-3 text-slate-500" />
-              <input 
-                type="email" 
-                value={email} 
-                onChange={e => setEmail(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 text-white pl-12 pr-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                placeholder="you@example.com"
-                required
-              />
+        <form onSubmit={handleAuth} className="space-y-5 relative">
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-slate-800/50 border border-slate-700 text-white px-6 py-4 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500" placeholder="admin@os.system" required />
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-slate-800/50 border border-slate-700 text-white px-6 py-4 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500" placeholder="••••••••" required />
+          
+          {error && (
+            <div className={`p-5 rounded-2xl border text-center text-[10px] font-black uppercase leading-relaxed ${
+              error.includes("Account created") 
+                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500" 
+                : "bg-rose-500/10 border-rose-500/20 text-rose-500"
+            }`}>
+              <div className="flex items-center justify-center gap-2 mb-1">
+                {error.includes("Account created") ? <CheckCircle2 size={14}/> : <AlertTriangle size={14}/>}
+                <span>Status Update</span>
+              </div>
+              {error}
             </div>
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-500 uppercase ml-1">Secure Password</label>
-            <div className="relative">
-              <Lock size={18} className="absolute left-4 top-3 text-slate-500" />
-              <input 
-                type="password" 
-                value={password} 
-                onChange={e => setPassword(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 text-white pl-12 pr-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                placeholder="••••••••"
-                required
-              />
-            </div>
-          </div>
+          )}
 
-          {error && <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-500 text-xs rounded-lg text-center">{error}</div>}
-
-          <button 
-            type="submit" 
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"
-          >
-            {loading ? 'Processing...' : isLogin ? 'Access Platform' : 'Initialize Account'}
+          <button disabled={loading} type="submit" className="w-full bg-blue-600 text-white font-black py-4 rounded-2xl hover:bg-blue-700 transition-all text-xs uppercase tracking-[0.2em]">
+            {loading ? 'VERIFYING...' : isLogin ? 'AUTHORIZE' : 'REGISTER OPERATOR'}
           </button>
         </form>
 
-        <button 
-          onClick={() => setIsLogin(!isLogin)}
-          className="w-full text-slate-500 text-sm mt-6 hover:text-white transition-colors"
-        >
-          {isLogin ? "Don't have an account? Create one" : "Already have an account? Log in"}
+        <button onClick={() => setIsLogin(!isLogin)} className="w-full text-blue-500 text-[10px] mt-8 hover:text-white font-black uppercase tracking-widest transition-colors">
+          {isLogin ? "Create Operator Account" : "Back to Authorization"}
         </button>
       </div>
-
-      {!DBService.isConfigured() && (
-        <div className="mt-8 max-w-md w-full p-6 bg-slate-900 border border-blue-500/30 rounded-2xl animate-pulse">
-           <div className="flex items-center gap-3 mb-4 text-blue-400">
-             <SettingsIcon size={20} />
-             <h3 className="font-bold">Initial Configuration Required</h3>
-           </div>
-           <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-             The OS environment needs a Supabase project to store your business data securely. Please configure your settings if you haven't yet.
-           </p>
-           <button 
-            onClick={() => {
-              const url = prompt("Enter Supabase URL:");
-              const key = prompt("Enter Supabase Anon Key:");
-              if(url && key) {
-                StorageService.saveSupabaseConfig({ url, anonKey: key });
-                window.location.reload();
-              }
-            }}
-            className="text-xs font-bold text-blue-500 hover:underline"
-           >
-             Paste Configuration Keys Now
-           </button>
-        </div>
-      )}
+      
+      {/* Troubleshooting hint */}
+      <div className="mt-8 flex items-center gap-2 text-slate-600 text-[9px] font-black uppercase tracking-[0.2em] bg-slate-900/50 px-4 py-2 rounded-full border border-slate-800">
+        <Info size={12} />
+        <span>Tip: Disable 'Confirm Email' in Supabase Auth settings to skip verification</span>
+      </div>
     </div>
   );
 };
 
-// --- Main Layout Components ---
+// --- Pages ---
 
-const Dashboard: React.FC<{ invoices: Invoice[]; projects: Project[]; insights: AIInsight[] }> = ({ invoices, projects, insights }) => {
+const Dashboard: React.FC<{ invoices: Invoice[]; transactions: Transaction[]; insights: AIInsight[] }> = ({ invoices, transactions, insights }) => {
   const stats = useMemo(() => {
-    const paid = invoices.filter(i => i.status === 'Paid').reduce((acc, i) => acc + i.amount, 0);
-    const unpaid = invoices.filter(i => i.status === 'Unpaid').reduce((acc, i) => acc + i.amount, 0);
-    const unpaidCount = invoices.filter(i => i.status === 'Unpaid').length;
-    const earnings = invoices.filter(i => i.status === 'Paid').reduce((acc, i) => acc + i.earning, 0);
-    return { paid, unpaid, unpaidCount, earnings };
-  }, [invoices]);
-
-  const formatCurrency = (val: number) => `${val.toLocaleString()} RWF`;
+    const revenue = invoices.filter(i => i.status === PaymentStatus.PAID).reduce((a, b) => a + b.amount, 0);
+    const pending = invoices.filter(i => i.status === PaymentStatus.UNPAID).reduce((a, b) => a + b.amount, 0);
+    const profit = invoices.filter(i => i.status === PaymentStatus.PAID).reduce((a, b) => a + b.earning, 0);
+    const expenses = transactions.filter(t => t.type === TransactionType.EXPENSE).reduce((a, b) => a + b.amount, 0);
+    return { revenue, pending, profit, expenses };
+  }, [invoices, transactions]);
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Paid Invoices</p>
-          <p className="text-2xl font-bold">{formatCurrency(stats.paid)}</p>
-        </div>
-        <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-3 bg-amber-500/10 text-amber-600 rounded-bl-xl font-bold text-xs">{stats.unpaidCount} Pending</div>
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Unpaid Total</p>
-          <p className="text-2xl font-bold">{formatCurrency(stats.unpaid)}</p>
-        </div>
-        <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">My Earnings (21%)</p>
-          <p className="text-2xl font-bold text-emerald-600">{formatCurrency(stats.earnings)}</p>
-        </div>
-        <div className="bg-blue-600 p-6 rounded-2xl shadow-lg shadow-blue-500/20 text-white">
-          <p className="text-xs font-bold text-blue-100 uppercase tracking-wider mb-1">Active Projects</p>
-          <p className="text-2xl font-bold">{projects.length}</p>
-        </div>
+        {[
+          { label: 'Net Revenue', val: stats.revenue, icon: <TrendingUp size={18}/>, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+          { label: 'Outstanding', val: stats.pending, icon: <Clock size={18}/>, color: 'text-amber-500', bg: 'bg-amber-500/10' },
+          { label: 'Profit', val: stats.profit, icon: <DollarSign size={18}/>, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+          { label: 'Total Expenses', val: stats.expenses, icon: <CreditCard size={18}/>, color: 'text-rose-500', bg: 'bg-rose-500/10' }
+        ].map(s => (
+          <div key={s.label} className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:shadow-md">
+            <div className="flex justify-between items-center mb-6">
+              <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">{s.label}</span>
+              <div className={`p-2.5 rounded-xl ${s.bg} ${s.color}`}>{s.icon}</div>
+            </div>
+            <p className="text-2xl font-black tabular-nums">{s.val.toLocaleString()} <span className="text-xs font-bold text-slate-400 ml-1">RWF</span></p>
+          </div>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <Card title="Business Insights (AI)" className="lg:col-span-2">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {insights.map((insight, idx) => (
-              <div key={idx} className="p-4 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
-                <div className="flex items-center gap-2 mb-2">
-                  {insight.type === 'warning' ? <AlertCircle size={16} className="text-rose-500" /> : <Lightbulb size={16} className="text-amber-500" />}
-                  <span className="text-sm font-bold">{insight.title}</span>
+        <div className="lg:col-span-2">
+          <Card title="Intelligence Stream">
+            <div className="space-y-4">
+              {insights.map((insight, idx) => (
+                <div key={idx} className="flex gap-5 p-6 rounded-[1.5rem] bg-slate-50 dark:bg-slate-950/50 border border-transparent hover:border-slate-200 dark:hover:border-slate-800 transition-all group">
+                  <div className={`p-3 rounded-2xl h-fit ${insight.type === 'warning' ? 'bg-rose-500' : 'bg-blue-500'} text-white shadow-lg`}>
+                    {insight.type === 'warning' ? <AlertTriangle size={20}/> : <Sparkles size={20}/>}
+                  </div>
+                  <div>
+                    <p className="text-base font-black tracking-tight group-hover:text-blue-600 transition-colors">{insight.title}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed font-medium">{insight.content}</p>
+                  </div>
                 </div>
-                <p className="text-xs text-slate-500 leading-relaxed">{insight.content}</p>
-              </div>
-            ))}
-            {insights.length === 0 && (
-              <div className="col-span-2 text-center py-10">
-                <Sparkles size={32} className="mx-auto text-slate-200 mb-2" />
-                <p className="text-xs text-slate-400">Run an analysis to see insights</p>
-              </div>
-            )}
-          </div>
-        </Card>
+              ))}
+              {insights.length === 0 && (
+                <div className="text-center py-20 opacity-30">
+                  <Sparkles size={40} className="mx-auto mb-4" />
+                  <p className="text-xs font-black uppercase tracking-widest">Analyzing capital patterns...</p>
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
         
-        <Card title="Quick Actions">
-          <div className="space-y-3">
-             <button className="w-full flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl hover:bg-slate-100 transition-colors">
-               <span className="text-sm font-medium">New Project</span>
-               <Plus size={16} />
-             </button>
-             <button className="w-full flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl hover:bg-slate-100 transition-colors">
-               <span className="text-sm font-medium">Add Credential</span>
-               <Lock size={16} />
-             </button>
-             <button className="w-full flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl hover:bg-slate-100 transition-colors">
-               <span className="text-sm font-medium">Tax Export</span>
-               <FileText size={16} />
-             </button>
+        <div className="space-y-8">
+          <div className="bg-slate-900 dark:bg-blue-600 rounded-[2.5rem] p-10 text-white flex flex-col justify-between shadow-2xl relative overflow-hidden group min-h-[300px]">
+             <div className="absolute top-0 right-0 w-48 h-48 bg-white/10 blur-[80px] rounded-full -mr-24 -mt-24 group-hover:bg-white/20 transition-all duration-700"></div>
+             <div>
+               <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-white/50 mb-10">Quick Launch</h3>
+               <div className="space-y-4">
+                 <Link to="/invoices" className="flex items-center justify-between p-5 bg-white/10 rounded-2xl hover:bg-white/20 transition-all border border-white/5">
+                   <span className="text-xs font-bold uppercase tracking-widest">Billing Terminal</span>
+                   <Receipt size={18} />
+                 </Link>
+                 <Link to="/transactions" className="flex items-center justify-between p-5 bg-white/10 rounded-2xl hover:bg-white/20 transition-all border border-white/5">
+                   <span className="text-xs font-bold uppercase tracking-widest">Capital Ledger</span>
+                   <Wallet size={18} />
+                 </Link>
+               </div>
+             </div>
+             <div className="pt-8 border-t border-white/10">
+                <p className="text-[10px] font-black text-white/40 uppercase tracking-[0.3em] mb-2">OS Status</p>
+                <p className="text-xs font-bold text-blue-300 uppercase tracking-widest">Operational • Cloud Link Active</p>
+             </div>
           </div>
-        </Card>
+        </div>
       </div>
     </div>
   );
 };
 
-// --- Main App Entry ---
+const InvoicesPage: React.FC<{ invoices: Invoice[]; onRefresh: () => void }> = ({ invoices, onRefresh }) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState<Partial<Invoice>>({
+    invoiceNumber: `INV-${Date.now().toString().slice(-6)}`,
+    clientName: '',
+    amount: 0,
+    status: PaymentStatus.UNPAID,
+    date: new Date().toISOString().split('T')[0]
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const amount = Number(formData.amount || 0);
+      await DBService.addInvoice({
+        invoiceNumber: formData.invoiceNumber || '',
+        clientName: formData.clientName || '',
+        date: formData.date || '',
+        amount,
+        vatAmount: amount * BUSINESS_CONFIG.vatRate,
+        earning: amount * BUSINESS_CONFIG.earningRate,
+        status: formData.status as PaymentStatus,
+        notes: formData.notes
+      });
+      setIsModalOpen(false);
+      onRefresh();
+    } catch (err) {
+      alert("Error saving record. Check your Supabase tables.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteInvoice = async (id: string) => {
+    if (!confirm("Delete record?")) return;
+    await DBService.deleteInvoice(id);
+    onRefresh();
+  };
+
+  return (
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex justify-between items-end">
+        <div>
+          <h1 className="text-4xl font-black uppercase tracking-tight mb-2">Billing</h1>
+          <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">South Korea Vehicles Operating System</p>
+        </div>
+        <button onClick={() => setIsModalOpen(true)} className="bg-slate-950 dark:bg-white dark:text-slate-950 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:opacity-90 transition-all">
+          New Invoice
+        </button>
+      </div>
+
+      <Card title="Billing History" subtitle="Tracking VAT (18%) and Earnings (21%)">
+        <div className="overflow-x-auto -mx-8">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">
+                <th className="py-5 px-8">ID / Client</th>
+                <th className="py-5 px-8 text-right">Revenue</th>
+                <th className="py-5 px-8 text-right">Your Net (21%)</th>
+                <th className="py-5 px-8 text-center">Status</th>
+                <th className="py-5 px-8 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {invoices.map((inv) => (
+                <tr key={inv.id} className="text-sm hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                  <td className="py-6 px-8">
+                    <div className="font-black text-slate-800 dark:text-slate-100">{inv.clientName}</div>
+                    <div className="text-[10px] text-slate-400 font-bold uppercase mt-1">{inv.invoiceNumber} • {inv.date}</div>
+                  </td>
+                  <td className="py-6 px-8 text-right font-bold">{inv.amount.toLocaleString()}</td>
+                  <td className="py-6 px-8 text-right font-black text-blue-600 dark:text-blue-400">{inv.earning.toLocaleString()}</td>
+                  <td className="py-6 px-8 text-center">
+                    <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${inv.status === PaymentStatus.PAID ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600'}`}>
+                      {inv.status}
+                    </span>
+                  </td>
+                  <td className="py-6 px-8 text-right">
+                    <button onClick={() => deleteInvoice(inv.id)} className="p-2 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={16}/></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="New Invoice Entry">
+        <form onSubmit={handleSubmit} className="space-y-5">
+           <div className="space-y-1">
+             <label className="text-[10px] font-black text-slate-500 uppercase ml-2">Client Name</label>
+             <input type="text" placeholder="e.g. Samsung Logistics" className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none" value={formData.clientName} onChange={e => setFormData({...formData, clientName: e.target.value})} required />
+           </div>
+           <div className="grid grid-cols-2 gap-4">
+             <div className="space-y-1">
+               <label className="text-[10px] font-black text-slate-500 uppercase ml-2">Total Amount</label>
+               <input type="number" placeholder="RWF" className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none" value={formData.amount} onChange={e => setFormData({...formData, amount: Number(e.target.value)})} required />
+             </div>
+             <div className="space-y-1">
+               <label className="text-[10px] font-black text-slate-500 uppercase ml-2">Date</label>
+               <input type="date" className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} required />
+             </div>
+           </div>
+           <button type="submit" disabled={loading} className="w-full bg-slate-900 dark:bg-white dark:text-slate-950 text-white py-4 rounded-2xl font-black uppercase tracking-widest text-xs mt-4">
+             {loading ? 'SYNCING...' : 'SAVE TO CLOUD'}
+           </button>
+        </form>
+      </Modal>
+    </div>
+  );
+};
+
+const TransactionsPage: React.FC<{ transactions: Transaction[]; onRefresh: () => void }> = ({ transactions, onRefresh }) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [formData, setFormData] = useState<Partial<Transaction>>({ type: TransactionType.EXPENSE, amount: 0, date: new Date().toISOString().split('T')[0], category: CATEGORIES[0], description: '' });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await DBService.addTransaction({
+        type: formData.type as TransactionType,
+        amount: Number(formData.amount),
+        date: formData.date || '',
+        category: formData.category || 'Other',
+        description: formData.description || ''
+      });
+      setIsModalOpen(false);
+      onRefresh();
+    } catch (err) {
+      alert("Error saving transaction.");
+    }
+  };
+
+  return (
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex justify-between items-end">
+        <div>
+          <h1 className="text-4xl font-black uppercase tracking-tight mb-2">Ledger</h1>
+          <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Tracking Business Expenses & Income</p>
+        </div>
+        <button onClick={() => setIsModalOpen(true)} className="bg-emerald-600 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-emerald-700 transition-all">
+          Log Entry
+        </button>
+      </div>
+
+      <Card title="Cash Flow Records">
+        <div className="overflow-x-auto -mx-8">
+           <table className="w-full text-left">
+             <thead>
+               <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50">
+                 <th className="py-5 px-8">Description</th>
+                 <th className="py-5 px-8 text-right">Amount</th>
+                 <th className="py-5 px-8 text-right">Action</th>
+               </tr>
+             </thead>
+             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+               {transactions.map(t => (
+                 <tr key={t.id} className="text-sm hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                   <td className="py-6 px-8">
+                      <div className="font-bold">{t.description}</div>
+                      <div className="text-[10px] text-slate-400 font-bold uppercase mt-1">{t.category} • {t.date}</div>
+                   </td>
+                   <td className={`py-6 px-8 text-right font-black ${t.type === TransactionType.INCOME ? 'text-emerald-500' : 'text-rose-500'}`}>
+                      {t.type === TransactionType.INCOME ? '+' : '-'}{t.amount.toLocaleString()}
+                   </td>
+                   <td className="py-6 px-8 text-right">
+                      <button onClick={() => DBService.deleteTransaction(t.id).then(onRefresh)} className="text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={16}/></button>
+                   </td>
+                 </tr>
+               ))}
+             </tbody>
+           </table>
+        </div>
+      </Card>
+
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="New Ledger Entry">
+        <form onSubmit={handleSubmit} className="space-y-4">
+           <select className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value as TransactionType})}>
+             <option value={TransactionType.EXPENSE}>Expense</option>
+             <option value={TransactionType.INCOME}>Income</option>
+           </select>
+           <input placeholder="Description" className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} required />
+           <input type="number" placeholder="Amount (RWF)" className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none" value={formData.amount} onChange={e => setFormData({...formData, amount: Number(e.target.value)})} required />
+           <select className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
+             {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+           </select>
+           <button type="submit" className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl">COMMIT RECORD</button>
+        </form>
+      </Modal>
+    </div>
+  );
+};
+
+const ProjectsPage: React.FC<{ projects: Project[]; onRefresh: () => void }> = ({ projects, onRefresh }) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [formData, setFormData] = useState<Partial<Project>>({ name: '', description: '', status: ProjectStatus.ACTIVE });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await DBService.addProject({
+        name: formData.name || '',
+        description: formData.description || '',
+        status: formData.status as ProjectStatus,
+        techStack: []
+      });
+      setIsModalOpen(false);
+      onRefresh();
+    } catch (err) {
+      alert("Error saving project.");
+    }
+  };
+
+  return (
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex justify-between items-end">
+        <div>
+          <h1 className="text-4xl font-black uppercase tracking-tight mb-2">Projects</h1>
+          <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Global Life & Business Memory Hub</p>
+        </div>
+        <button onClick={() => setIsModalOpen(true)} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-indigo-700 transition-all">
+          Initialize Project
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        {projects.map(p => (
+          <div key={p.id} className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-sm hover:border-indigo-500/50 transition-all group">
+            <div className="flex justify-between items-start mb-6">
+               <div className="w-12 h-12 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-500"><FolderGit2 size={24}/></div>
+               <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg">{p.status}</span>
+            </div>
+            <h3 className="text-xl font-black mb-3">{p.name}</h3>
+            <p className="text-xs text-slate-500 leading-relaxed line-clamp-3 mb-8 min-h-[4.5rem]">{p.description}</p>
+            <div className="flex justify-between items-center pt-6 border-t border-slate-50 dark:border-slate-800">
+               <div className="flex items-center gap-4">
+                 <button className="text-[10px] font-black uppercase tracking-widest text-indigo-500 hover:underline">Manage Keys</button>
+               </div>
+               <button onClick={() => DBService.deleteProject(p.id).then(onRefresh)} className="text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={16}/></button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="New Project Module">
+        <form onSubmit={handleSubmit} className="space-y-5">
+           <input placeholder="Project Name (e.g. SmartGarage)" className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
+           <textarea placeholder="Description and Objectives" className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none h-32" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
+           <button type="submit" className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl">COMMIT TO MEMORY</button>
+        </form>
+      </Modal>
+    </div>
+  );
+};
+
+// --- Layout ---
 
 const MainLayout: React.FC = () => {
   const [user, setUser] = useState<any>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [insights, setInsights] = useState<AIInsight[]>([]);
   const [loading, setLoading] = useState(true);
   const location = useLocation();
 
   useEffect(() => {
-    // Auth Listener
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const { data: { subscription } } = getSupabase().auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       if (session) fetchData();
       else setLoading(false);
     });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session) fetchData();
-    });
-
     return () => subscription.unsubscribe();
   }, []);
 
   const fetchData = async () => {
+    if (!DBService.isConfigured()) return;
     setLoading(true);
     try {
-      if (!DBService.isConfigured()) {
-        console.warn("DB not configured yet.");
-        setLoading(false);
-        return;
-      }
-      const [invData, projData] = await Promise.all([
+      const [invData, projData, txData] = await Promise.all([
         DBService.getInvoices(),
-        DBService.getProjects()
+        DBService.getProjects(),
+        DBService.getTransactions()
       ]);
-      setInvoices(invData);
-      setProjects(projData);
-      
-      const aiInsights = await AIService.generateInsights(invData, [], projData);
-      setInsights(aiInsights);
+      setInvoices(invData || []);
+      setProjects(projData || []);
+      setTransactions(txData || []);
+      const aiInsights = await AIService.generateInsights(invData || [], txData || [], projData || []);
+      setInsights(aiInsights || []);
     } catch (err) {
-      console.error("Data Fetch Error:", err);
+      console.error("Fetch data error:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-  };
-
-  if (loading) return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-8 text-center">
-      <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-      <p className="text-slate-500 font-medium animate-pulse">Synchronizing Secure OS...</p>
+  if (!DBService.isConfigured()) return <SetupScreen />;
+  if (loading && !user) return (
+    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center">
+       <div className="w-12 h-12 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mb-6"></div>
+       <p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.4em] animate-pulse">Initializing OS Kernel</p>
     </div>
   );
-
   if (!user) return <AuthScreen />;
 
   return (
-    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100">
-      <aside className={`fixed top-0 left-0 bottom-0 w-64 bg-slate-950 text-white z-50 transform transition-transform duration-300 lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="h-20 flex items-center px-6 border-b border-slate-900">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center mr-3">
-             <TrendingUp size={18} />
-          </div>
-          <span className="font-bold tracking-tight">GET RICH OS</span>
+    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300">
+      <aside className={`fixed top-0 left-0 bottom-0 w-72 bg-white dark:bg-slate-900 z-50 transform transition-transform duration-300 lg:translate-x-0 border-r border-slate-200 dark:border-slate-800 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="h-24 flex items-center px-10 border-b border-slate-100 dark:border-slate-800">
+           <div className="w-10 h-10 bg-slate-950 dark:bg-white rounded-xl flex items-center justify-center mr-4">
+              <TrendingUp size={20} className="text-white dark:text-slate-950" />
+           </div>
+           <span className="font-black text-xl tracking-tighter uppercase">OS.SYS</span>
         </div>
-        <nav className="p-4 space-y-1">
-          {NAVIGATION.map(item => (
-            <Link 
-              key={item.name} 
-              to={item.path} 
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                location.pathname === item.path 
-                  ? 'bg-blue-600 text-white' 
-                  : 'text-slate-400 hover:bg-slate-900 hover:text-white'
-              }`}
-            >
-              {item.icon}
-              <span className="font-medium">{item.name}</span>
-            </Link>
-          ))}
-          <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-rose-500 hover:bg-rose-500/10 transition-all mt-10">
-            <LogOut size={20} />
-            <span className="font-medium">Sign Out</span>
-          </button>
+        <nav className="p-8 space-y-3">
+           {NAVIGATION.map(item => (
+             <Link key={item.name} to={item.path} onClick={() => setIsSidebarOpen(false)} className={`flex items-center gap-4 px-6 py-4 rounded-2xl transition-all ${location.pathname === item.path ? 'bg-slate-950 dark:bg-white text-white dark:text-slate-950 shadow-xl' : 'text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+                {item.icon}<span className="text-[10px] font-black uppercase tracking-widest">{item.name}</span>
+             </Link>
+           ))}
+           <button onClick={() => getSupabase().auth.signOut()} className="w-full flex items-center gap-4 px-6 py-4 rounded-2xl text-rose-500 hover:bg-rose-500/10 transition-all mt-12">
+             <LogOut size={18} /><span className="text-[10px] font-black uppercase tracking-widest">Terminate Session</span>
+           </button>
         </nav>
       </aside>
 
-      <main className="flex-1 lg:ml-64 p-4 md:p-8">
-        <header className="flex justify-between items-center mb-10">
-           <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 text-slate-500">
-             <Menu size={24} />
-           </button>
-           <div className="flex items-center gap-3">
-             <div className="text-right hidden sm:block">
-               <p className="text-xs font-bold text-slate-500 uppercase">Authenticated Session</p>
-               <p className="text-sm font-semibold truncate max-w-[150px]">{user.email}</p>
-             </div>
-             <div className="w-10 h-10 bg-slate-200 dark:bg-slate-800 rounded-xl flex items-center justify-center border border-slate-300 dark:border-slate-700">
-                <User size={20} className="text-slate-500" />
-             </div>
-           </div>
-        </header>
+      <main className="flex-1 lg:ml-72 p-6 md:p-12 lg:p-16 max-w-screen-2xl mx-auto w-full">
+         <header className="flex justify-between items-center mb-16">
+            <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-4 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800"><Menu size={20}/></button>
+            <div className="hidden lg:block">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active Module</p>
+              <h2 className="text-sm font-bold uppercase mt-1">{NAVIGATION.find(n => n.path === location.pathname)?.name || 'OS System'}</h2>
+            </div>
+            <div className="flex items-center gap-6">
+               <div className="text-right hidden sm:block">
+                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Operator Active</p>
+                 <p className="text-xs font-bold mt-0.5">{user.email}</p>
+               </div>
+               <div className="w-14 h-14 bg-white dark:bg-slate-900 rounded-[1.25rem] flex items-center justify-center border border-slate-200 dark:border-slate-800 shadow-sm">
+                  <User size={22} className="text-slate-600 dark:text-slate-400" />
+               </div>
+            </div>
+         </header>
 
-        <Routes>
-          <Route path="/" element={<Dashboard invoices={invoices} projects={projects} insights={insights} />} />
-          <Route path="/invoices" element={<div className="p-20 text-center">Invoices List (Connected to DB)</div>} />
-          <Route path="/projects" element={<div className="p-20 text-center">Projects Repository (Connected to DB)</div>} />
-          <Route path="/settings" element={<SettingsPage user={user} />} />
-          <Route path="*" element={<Navigate to="/" />} />
-        </Routes>
+         <Routes>
+           <Route path="/" element={<Dashboard invoices={invoices} transactions={transactions} insights={insights} />} />
+           <Route path="/invoices" element={<InvoicesPage invoices={invoices} onRefresh={fetchData} />} />
+           <Route path="/projects" element={<ProjectsPage projects={projects} onRefresh={fetchData} />} />
+           <Route path="/transactions" element={<TransactionsPage transactions={transactions} onRefresh={fetchData} />} />
+           <Route path="/ai" element={
+              <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <h1 className="text-4xl font-black uppercase tracking-tight">AI Strategy Hub</h1>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {insights.map((insight, idx) => (
+                    <div key={idx} className={`p-10 rounded-[3rem] border ${
+                      insight.type === 'warning' ? 'bg-rose-50 dark:bg-rose-950/20 border-rose-100 dark:border-rose-900' : 'bg-blue-50 dark:bg-blue-950/20 border-blue-100 dark:border-blue-900'
+                    }`}>
+                      <h3 className="text-2xl font-black mb-4">{insight.title}</h3>
+                      <p className="text-slate-600 dark:text-slate-400 leading-relaxed">{insight.content}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+           } />
+           <Route path="/settings" element={
+              <div className="max-w-xl space-y-12">
+                 <h1 className="text-4xl font-black uppercase tracking-tight">Core</h1>
+                 <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] border border-slate-200 dark:border-slate-800">
+                    <h3 className="text-sm font-black uppercase tracking-widest mb-10">Infrastructure Status</h3>
+                    <div className="flex items-center gap-4 p-6 bg-emerald-500/10 text-emerald-600 rounded-[1.5rem] mb-10 border border-emerald-500/20">
+                      <Shield size={20} />
+                      <span className="text-[10px] font-black uppercase tracking-widest">Encrypted Backbone Active</span>
+                    </div>
+                    <button onClick={() => { StorageService.saveSupabaseConfig({ url: '', anonKey: '' }); window.location.reload(); }} className="w-full bg-rose-600 text-white py-5 rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl shadow-rose-500/20 hover:bg-rose-700 transition-all">
+                      Disconnect Cloud Link
+                    </button>
+                 </div>
+              </div>
+           } />
+           <Route path="*" element={<Navigate to="/" />} />
+         </Routes>
       </main>
     </div>
   );
@@ -481,7 +669,7 @@ const MainLayout: React.FC = () => {
 export default function App() {
   return (
     <HashRouter>
-      <MainLayout />
+       <MainLayout />
     </HashRouter>
   );
 }
